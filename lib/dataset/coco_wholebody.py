@@ -1,10 +1,3 @@
-# ------------------------------------------------------------------------------
-# Copyright (c) Microsoft
-# Licensed under the MIT License.
-# Written by Bin Xiao (Bin.Xiao@microsoft.com)
-# Written by Feng Zhang & Hong Hu
-# ------------------------------------------------------------------------------
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -14,8 +7,8 @@ from collections import OrderedDict
 import logging
 import os
 
-from pycocotools.coco import COCO
-from pycocotools.cocoeval import COCOeval
+from xtcocotools.coco import COCO
+from xtcocotools.cocoeval import COCOeval
 import json_tricks as json
 import pickle
 import numpy as np
@@ -24,35 +17,35 @@ from ..dataset.JointsDataset import JointsDataset
 from ..nms.nms import oks_nms
 from ..nms.nms import soft_oks_nms
 
-
 logger = logging.getLogger(__name__)
 
+class COCO_WHOLEBODYDataset(JointsDataset):
+    """CocoWholeBodyDataset dataset for top-down pose estimation.
 
-class COCODataset(JointsDataset):
-    '''
-    "keypoints": {
-        0: "nose",
-        1: "left_eye",
-        2: "right_eye",
-        3: "left_ear",
-        4: "right_ear",
-        5: "left_shoulder",
-        6: "right_shoulder",
-        7: "left_elbow",
-        8: "right_elbow",
-        9: "left_wrist",
-        10: "right_wrist",
-        11: "left_hip",
-        12: "right_hip",
-        13: "left_knee",
-        14: "right_knee",
-        15: "left_ankle",
-        16: "right_ankle"
-    },
-	"skeleton": [
-        [16,14],[14,12],[17,15],[15,13],[12,13],[6,12],[7,13], [6,7],[6,8],
-        [7,9],[8,10],[9,11],[2,3],[1,2],[1,3],[2,4],[3,5],[4,6],[5,7]]
-    '''
+    `Whole-Body Human Pose Estimation in the Wild' ECCV'2020
+    More details can be found in the `paper
+    <https://arxiv.org/abs/2007.11858>`__ .
+
+    The dataset loads raw features and apply specified transforms
+    to return a dict containing the image tensors and other information.
+
+    In total, we have 133 keypoints for wholebody pose estimation.
+
+    COCO-WholeBody keypoint indexes::
+        0-16: 17 body keypoints
+        17-22: 6 foot keypoints
+        23-90: 68 face keypoints
+        91-132: 42 hand keypoints
+
+    Args:
+        ann_file (str): Path to the annotation file.
+        img_prefix (str): Path to a directory where images are held.
+            Default: None.
+        data_cfg (dict): config
+        pipeline (list[dict | callable]): A sequence of data transforms.
+        test_mode (bool): Store True when building test or
+            validation dataset. Default: False.
+    """
     def __init__(self, cfg, root, image_set, is_train, transform=None):
         super().__init__(cfg, root, image_set, is_train, transform)
         self.nms_thre = cfg.TEST.NMS_THRE
@@ -407,6 +400,7 @@ class COCODataset(JointsDataset):
                     f.write(c)
 
     def _coco_keypoint_results_one_category_kernel(self, data_pack):
+        """Get coco keypoint results."""
         cat_id = data_pack['cat_id']
         keypoints = data_pack['keypoints']
         cat_results = []
@@ -417,7 +411,7 @@ class COCODataset(JointsDataset):
 
             _key_points = np.array([img_kpts[k]['keypoints']
                                     for k in range(len(img_kpts))])
-            key_points = np.zeros(
+            key_points = _key_points.zeros(
                 (_key_points.shape[0], self.num_joints * 3), dtype=np.float
             )
 
@@ -426,9 +420,14 @@ class COCODataset(JointsDataset):
                 key_points[:, ipt * 3 + 1] = _key_points[:, ipt, 1]
                 key_points[:, ipt * 3 + 2] = _key_points[:, ipt, 2]  # keypoints score.
 
+            cuts = np.cumsum([
+                0, self.body_num, self.foot_num, self.face_num,
+                self.left_hand_num, self.right_hand_num
+            ]) * 3
+
             result = [
                 {
-                    'image_id': img_kpts[k]['image'],
+                    'image_id': img_kpts[k]['image_id'],
                     'category_id': cat_id,
                     'keypoints': list(key_points[k]),
                     'score': img_kpts[k]['score'],
@@ -442,8 +441,69 @@ class COCODataset(JointsDataset):
         return cat_results
 
     def _do_python_keypoint_eval(self, res_file, res_folder):
+        """Keypoint evaluation using COCOAPI."""
         coco_dt = self.coco.loadRes(res_file)
-        coco_eval = COCOeval(self.coco, coco_dt, 'keypoints')
+        coco_eval = COCOeval(
+            self.coco,
+            coco_dt,
+            'keypoints_body',
+            np.array(self.sigmas_body),
+            use_area=True)
+        coco_eval.params.useSegm = None
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        coco_eval.summarize()
+
+        coco_eval = COCOeval(
+            self.coco,
+            coco_dt,
+            'keypoints_foot',
+            np.array(self.sigmas_foot),
+            use_area=True)
+        coco_eval.params.useSegm = None
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        coco_eval.summarize()
+
+        coco_eval = COCOeval(
+            self.coco,
+            coco_dt,
+            'keypoints_face',
+            np.array(self.sigmas_face),
+            use_area=True)
+        coco_eval.params.useSegm = None
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        coco_eval.summarize()
+
+        coco_eval = COCOeval(
+            self.coco,
+            coco_dt,
+            'keypoints_lefthand',
+            np.array(self.sigmas_lefthand),
+            use_area=True)
+        coco_eval.params.useSegm = None
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        coco_eval.summarize()
+
+        coco_eval = COCOeval(
+            self.coco,
+            coco_dt,
+            'keypoints_righthand',
+            np.array(self.sigmas_righthand),
+            use_area=True)
+        coco_eval.params.useSegm = None
+        coco_eval.evaluate()
+        coco_eval.accumulate()
+        coco_eval.summarize()
+
+        coco_eval = COCOeval(
+            self.coco,
+            coco_dt,
+            'keypoints_wholebody',
+            np.array(self.sigmas_wholebody),
+            use_area=True)
         coco_eval.params.useSegm = None
         coco_eval.evaluate()
         coco_eval.accumulate()
