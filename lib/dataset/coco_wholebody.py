@@ -80,22 +80,56 @@ class COCO_WHOLEBODYDataset(JointsDataset):
         # load image file names
         self.image_set_index = self._load_image_set_index()
         self.num_images = len(self.image_set_index)
+        self.id2name, self.name2id = self._get_mapping_id_name(self.coco.imgs)
+        self.dataset_name = 'coco_wholebody'
         logger.info('=> num_images: {}'.format(self.num_images))
 
-        self.num_joints = 17
-        self.flip_pairs = [[1, 2], [3, 4], [5, 6], [7, 8],
-                           [9, 10], [11, 12], [13, 14], [15, 16]]
+        self.num_joints = 133
+        self.body_num = 17
+        self.foot_num = 6
+        self.face_num = 68
+        self.left_hand_num = 21
+        self.right_hand_num = 21
+
+        self.sigmas_body = [
+            0.026, 0.025, 0.025, 0.035, 0.035, 0.079, 0.079, 0.072, 0.072,
+            0.062, 0.062, 0.107, 0.107, 0.087, 0.087, 0.089, 0.089
+        ]
+        self.sigmas_foot = [0.068, 0.066, 0.066, 0.092, 0.094, 0.094]
+        self.sigmas_face = [
+            0.042, 0.043, 0.044, 0.043, 0.040, 0.035, 0.031, 0.025, 0.020,
+            0.023,  0.029, 0.032, 0.037, 0.038, 0.043, 0.041, 0.045, 0.013,
+            0.012, 0.011, 0.011, 0.012, 0.012, 0.011, 0.011, 0.013, 0.015,
+            0.009, 0.007, 0.007, 0.007, 0.012, 0.009, 0.008, 0.016, 0.010,
+            0.017, 0.011, 0.009, 0.011, 0.009, 0.007, 0.013, 0.008, 0.011,
+            0.012, 0.010, 0.034, 0.008, 0.008, 0.009, 0.008, 0.008, 0.007,
+            0.010, 0.008, 0.009, 0.009, 0.009, 0.007, 0.007, 0.008, 0.011,
+            0.008, 0.008, 0.008, 0.01, 0.008
+        ]
+        self.sigmas_lefthand = [
+            0.029, 0.022, 0.035, 0.037, 0.047, 0.026, 0.025, 0.024, 0.035,
+            0.018, 0.024, 0.022, 0.026, 0.017, 0.021, 0.021, 0.032, 0.02,
+            0.019, 0.022, 0.031
+        ]
+        self.sigmas_righthand = [
+            0.029, 0.022, 0.035, 0.037, 0.047, 0.026, 0.025, 0.024, 0.035,
+            0.018, 0.024, 0.022, 0.026, 0.017, 0.021, 0.021, 0.032, 0.02,
+            0.019, 0.022, 0.031
+        ]
+
+        self.sigmas_wholebody = (
+            self.sigmas_body + self.sigmas_foot + self.sigmas_face +
+            self.sigmas_lefthand + self.sigmas_righthand)
+
+        self.sigmas = np.array(self.sigmas_wholebody)
+
+        self.flip_pairs = self._make_flip_pairs()
         self.parent_ids = None
         self.upper_body_ids = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
         self.lower_body_ids = (11, 12, 13, 14, 15, 16)
 
-        self.joints_weight = np.array(
-            [
-                1., 1., 1., 1., 1., 1., 1., 1.2, 1.2,
-                1.5, 1.5, 1., 1., 1.2, 1.2, 1.5, 1.5
-            ],
-            dtype=np.float32
-        ).reshape((self.num_joints, 1))
+        self.use_different_joints_weight = False
+        self.joints_weight = np.ones(self.num_joints, dtype=np.float32)
 
         # self.db = self._get_db()
         # [Cache Point]
@@ -115,13 +149,31 @@ class COCO_WHOLEBODYDataset(JointsDataset):
 
         logger.info('=> load {} samples'.format(len(self.db)))
 
+    def _make_flip_pairs(self):
+        body = [[1, 2], [3, 4], [5, 6], [7, 8], [9, 10], [11, 12], [13, 14],
+                [15, 16]]
+        foot = [[17, 20], [18, 21], [19, 22]]
+
+        face = [[23, 39], [24, 38], [25, 37], [26, 36], [27, 35], [28, 34],
+                [29, 33], [30, 32], [40, 49], [41, 48], [42, 47], [43, 46],
+                [44, 45], [54, 58], [55, 57], [59, 68], [60, 67], [61, 66],
+                [62, 65], [63, 70], [64, 69], [71, 77], [72, 76], [73, 75],
+                [78, 82], [79, 81], [83, 87], [84, 86], [88, 90]]
+
+        hand = [[91, 112], [92, 113], [93, 114], [94, 115], [95, 116],
+                [96, 117], [97, 118], [98, 119], [99, 120], [100, 121],
+                [101, 122], [102, 123], [103, 124], [104, 125], [105, 126],
+                [106, 127], [107, 128], [108, 129], [109, 130], [110, 131],
+                [111, 132]]
+
+        return body + foot + face + hand
+
     def _get_ann_file_keypoint(self):
         """ self.root / annotations / person_keypoints_train2017.json """
-        prefix = 'person_keypoints' \
+        prefix = 'coco_wholebody' \
             if 'test' not in self.image_set else 'image_info'
         return os.path.join(
-            self.root,
-            'annotations',
+            'data/coco_wholebody',
             prefix + '_' + self.image_set + '.json'
         )
 
@@ -147,19 +199,19 @@ class COCO_WHOLEBODYDataset(JointsDataset):
         return gt_db
 
     def _load_coco_keypoint_annotation_kernal(self, index):
-        """
-        coco ann: [u'segmentation', u'area', u'iscrowd', u'image_id', u'bbox', u'category_id', u'id']
-        iscrowd:
-            crowd instances are handled by marking their overlaps with all categories to -1
-            and later excluded in training
-        bbox:
-            [x1, y1, w, h]
-        :param index: coco image id
-        :return: db entry
+        """load annotation from COCOAPI.
+
+        Note:
+            bbox:[x1, y1, w, h]
+        Args:
+            img_id: coco image id
+        Returns:
+            dict: db entry
         """
         im_ann = self.coco.loadImgs(index)[0]
         width = im_ann['width']
         height = im_ann['height']
+        num_joints = self.num_joints
 
         annIds = self.coco.getAnnIds(imgIds=index, iscrowd=False)
         objs = self.coco.loadAnns(annIds)
@@ -178,6 +230,7 @@ class COCO_WHOLEBODYDataset(JointsDataset):
         objs = valid_objs
 
         rec = []
+        bbox_id = 0
         for obj in objs:
             cls = self._coco_ind_to_class_ind[obj['category_id']]
             if cls != 1:
@@ -189,27 +242,25 @@ class COCO_WHOLEBODYDataset(JointsDataset):
 
             joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
             joints_3d_vis = np.zeros((self.num_joints, 3), dtype=np.float)
-            for ipt in range(self.num_joints):
-                joints_3d[ipt, 0] = obj['keypoints'][ipt * 3 + 0]
-                joints_3d[ipt, 1] = obj['keypoints'][ipt * 3 + 1]
-                joints_3d[ipt, 2] = 0
-                t_vis = obj['keypoints'][ipt * 3 + 2]
-                if t_vis > 1:
-                    t_vis = 1
-                joints_3d_vis[ipt, 0] = t_vis
-                joints_3d_vis[ipt, 1] = t_vis
-                joints_3d_vis[ipt, 2] = 0
+            keypoints = np.array(obj['keypoints'] + obj['foot_kpts'] +
+                                 obj['face_kpts'] + obj['lefthand_kpts'] +
+                                 obj['righthand_kpts']).reshape(-1, 3)
+            joints_3d[:,:2] = keypoints[:, :2]
+            joints_3d_vis[:, :2] = np.minimum(1, keypoints[:, 2:3] > 0)
 
             center, scale = self._box2cs(obj['clean_bbox'][:4])
             rec.append({
                 'image': self.image_path_from_index(index),
                 'center': center,
                 'scale': scale,
+                'rotation': 0,
                 'joints_3d': joints_3d,
                 'joints_3d_vis': joints_3d_vis,
-                'filename': '',
-                'imgnum': 0,
+                'dataset': self.dataset_name,
+                'bbox_score': 1,
+                'bbox_id': bbox_id
             })
+            bbox_id = bbox_id + 1
 
         return rec
 
@@ -415,6 +466,11 @@ class COCO_WHOLEBODYDataset(JointsDataset):
                 (_key_points.shape[0], self.num_joints * 3), dtype=np.float
             )
 
+            cuts = np.cumsum([
+                0, self.body_num, self.foot_num, self.face_num,
+                self.left_hand_num, self.right_hand_num
+            ]) * 3
+
             for ipt in range(self.num_joints):
                 key_points[:, ipt * 3 + 0] = _key_points[:, ipt, 0]
                 key_points[:, ipt * 3 + 1] = _key_points[:, ipt, 1]
@@ -429,7 +485,11 @@ class COCO_WHOLEBODYDataset(JointsDataset):
                 {
                     'image_id': img_kpts[k]['image_id'],
                     'category_id': cat_id,
-                    'keypoints': list(key_points[k]),
+                    'keypoints': list(key_points[k][cuts[0]:cuts[1]]),
+                    'foot_kpts': list(key_points[k][cuts[1]:cuts[2]]),
+                    'face_kpts': list(key_points[k][cuts[2]:cuts[3]]),
+                    'lefthand_kpts': list(key_points[k][cuts[3]:cuts[4]]),
+                    'righthand_kpts': list(key_points[k][cuts[4]:cuts[5]]),
                     'score': img_kpts[k]['score'],
                     'center': list(img_kpts[k]['center']),
                     'scale': list(img_kpts[k]['scale'])
