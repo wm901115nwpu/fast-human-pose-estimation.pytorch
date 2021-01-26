@@ -113,9 +113,13 @@ class JointsDataset(Dataset):
     def __getitem__(self, idx):
         db_rec = copy.deepcopy(self.db[idx])
 
-        image_file = db_rec['image']
+        # image_file = db_rec['image']
+        image_file = db_rec['image_file']
         filename = db_rec['filename'] if 'filename' in db_rec else ''
         imgnum = db_rec['imgnum'] if 'imgnum' in db_rec else ''
+        dataset = db_rec['dataset'] if 'dataset' in db_rec else ''
+        bbox_score = db_rec['bbox_score'] if 'bbox_score' in db_rec else ''
+        bbox_id = db_rec['bbox_id'] if 'bbox_id' in db_rec else ''
 
         if self.data_format == 'zip':
             from utils import zipreader
@@ -135,8 +139,8 @@ class JointsDataset(Dataset):
             raise ValueError('Fail to read {}'.format(image_file))
 
         joints = db_rec['joints_3d']
-        joints_vis = db_rec['joints_3d_vis']
-
+        # joints_vis = db_rec['joints_3d_vis']
+        joints_vis = db_rec['joints_3d_visible']
         c = db_rec['center']
         s = db_rec['scale']
         score = db_rec['score'] if 'score' in db_rec else 1
@@ -192,6 +196,9 @@ class JointsDataset(Dataset):
             'center': c,
             'scale': s,
             'rotation': r,
+            'dataset': dataset,
+            'bbox_score': bbox_score,
+            'bbox_id': bbox_id,
             'score': score
         }
 
