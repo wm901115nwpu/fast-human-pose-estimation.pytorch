@@ -90,6 +90,37 @@ class COCO_WHOLEBODYDataset(JointsDataset):
         self.left_hand_num = 21
         self.right_hand_num = 21
 
+        self.sigmas_body = [
+            0.026, 0.025, 0.025, 0.035, 0.035, 0.079, 0.079, 0.072, 0.072,
+            0.062, 0.062, 0.107, 0.107, 0.087, 0.087, 0.089, 0.089
+        ]
+        self.sigmas_foot = [0.068, 0.066, 0.066, 0.092, 0.094, 0.094]
+        self.igmas_face = [
+            0.042, 0.043, 0.044, 0.043, 0.040, 0.035, 0.031, 0.025, 0.020,
+            0.023, 0.029, 0.032, 0.037, 0.038, 0.043, 0.041, 0.045, 0.013,
+            0.012, 0.011, 0.011, 0.012, 0.012, 0.011, 0.011, 0.013, 0.015,
+            0.009, 0.007, 0.007, 0.007, 0.012, 0.009, 0.008, 0.016, 0.010,
+            0.017, 0.011, 0.009, 0.011, 0.009, 0.007, 0.013, 0.008, 0.011,
+            0.012, 0.010, 0.034, 0.008, 0.008, 0.009, 0.008, 0.008, 0.007,
+            0.010, 0.008, 0.009, 0.009, 0.009, 0.007, 0.007, 0.008, 0.011,
+            0.008, 0.008, 0.008, 0.01, 0.008
+        ]
+        self.sigmas_lefthand = [
+            0.029, 0.022, 0.035, 0.037, 0.047, 0.026, 0.025, 0.024, 0.035,
+            0.018, 0.024, 0.022, 0.026, 0.017, 0.021, 0.021, 0.032, 0.02,
+            0.019, 0.022, 0.031
+        ]
+        self.sigmas_righthand = [
+            0.029, 0.022, 0.035, 0.037, 0.047, 0.026, 0.025, 0.024, 0.035,
+            0.018, 0.024, 0.022, 0.026, 0.017, 0.021, 0.021, 0.032, 0.02,
+            0.019, 0.022, 0.031
+        ]
+
+        self.sigmas_wholebody = (
+                self.sigmas_body + self.sigmas_foot + self.sigmas_face +
+                self.sigmas_lefthand + self.sigmas_righthand)
+
+        self.sigmas = np.array(self.sigmas_wholebody)
         self.flip_pairs = self._make_flip_pairs()
         self.parent_ids = None
         self.upper_body_ids = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
@@ -450,7 +481,7 @@ class COCO_WHOLEBODYDataset(JointsDataset):
 
             result = [
                 {
-                    'image_id': img_kpts[k]['image_id'],
+                    'image_id': img_kpts[k]['image'],
                     'category_id': cat_id,
                     'keypoints': list(key_points[k][cuts[0]:cuts[1]]),
                     'foot_kpts': list(key_points[k][cuts[1]:cuts[2]]),
